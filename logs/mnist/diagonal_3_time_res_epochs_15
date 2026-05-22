@@ -1,0 +1,111 @@
+uv run python src/train_mnist.py --model diagonal --epochs 15                     
+100.0%
+100.0%
+100.0%
+100.0%
+Model: DIAGONAL
+Parameters: 115175
+Epoch 1 | Batch 0/469 | Loss: 478.3563 | Accuracy: 15.62%
+Epoch 1 | Batch 100/469 | Loss: 26.4937 | Accuracy: 17.19%
+Epoch 1 | Batch 200/469 | Loss: 8.7798 | Accuracy: 21.88%
+Epoch 1 | Batch 300/469 | Loss: 6.3189 | Accuracy: 7.81%
+Epoch 1 | Batch 400/469 | Loss: 5.1517 | Accuracy: 27.34%
+=== Epoch 1 Complete. Train Acc: 17.51%, Test Acc: 25.61% ===
+
+Epoch 2 | Batch 0/469 | Loss: 5.1571 | Accuracy: 25.00%
+Epoch 2 | Batch 100/469 | Loss: 6.1615 | Accuracy: 21.88%
+Epoch 2 | Batch 200/469 | Loss: 3.6089 | Accuracy: 22.66%
+Epoch 2 | Batch 300/469 | Loss: 2.6023 | Accuracy: 18.75%
+Epoch 2 | Batch 400/469 | Loss: 2.1974 | Accuracy: 28.91%
+=== Epoch 2 Complete. Train Acc: 24.51%, Test Acc: 26.30% ===
+
+Epoch 3 | Batch 0/469 | Loss: 2.4219 | Accuracy: 29.69%
+Epoch 3 | Batch 100/469 | Loss: 2.7375 | Accuracy: 26.56%
+Epoch 3 | Batch 200/469 | Loss: 2.1257 | Accuracy: 35.16%
+Epoch 3 | Batch 300/469 | Loss: 2.5437 | Accuracy: 27.34%
+Epoch 3 | Batch 400/469 | Loss: 1.8155 | Accuracy: 35.94%
+=== Epoch 3 Complete. Train Acc: 32.36%, Test Acc: 36.93% ===
+
+Epoch 4 | Batch 0/469 | Loss: 2.1989 | Accuracy: 40.62%
+Epoch 4 | Batch 100/469 | Loss: 2.2213 | Accuracy: 32.81%
+Epoch 4 | Batch 200/469 | Loss: 2.0000 | Accuracy: 38.28%
+Epoch 4 | Batch 300/469 | Loss: 1.7719 | Accuracy: 43.75%
+Epoch 4 | Batch 400/469 | Loss: 2.1159 | Accuracy: 43.75%
+=== Epoch 4 Complete. Train Acc: 40.03%, Test Acc: 44.31% ===
+
+Epoch 5 | Batch 0/469 | Loss: 1.9360 | Accuracy: 34.38%
+Epoch 5 | Batch 100/469 | Loss: 2.1425 | Accuracy: 33.59%
+Epoch 5 | Batch 200/469 | Loss: 1.4274 | Accuracy: 50.78%
+Epoch 5 | Batch 300/469 | Loss: 1.4434 | Accuracy: 47.66%
+Epoch 5 | Batch 400/469 | Loss: 1.7377 | Accuracy: 42.19%
+=== Epoch 5 Complete. Train Acc: 45.15%, Test Acc: 50.64% ===
+
+Epoch 6 | Batch 0/469 | Loss: 1.5543 | Accuracy: 48.44%
+Epoch 6 | Batch 100/469 | Loss: 1.3640 | Accuracy: 50.00%
+Epoch 6 | Batch 200/469 | Loss: 1.7287 | Accuracy: 46.09%
+Epoch 6 | Batch 300/469 | Loss: 1.4593 | Accuracy: 44.53%
+Epoch 6 | Batch 400/469 | Loss: 1.2553 | Accuracy: 57.81%
+=== Epoch 6 Complete. Train Acc: 50.12%, Test Acc: 52.85% ===
+
+Epoch 7 | Batch 0/469 | Loss: 1.2897 | Accuracy: 61.72%
+Epoch 7 | Batch 100/469 | Loss: 1.5104 | Accuracy: 50.00%
+Epoch 7 | Batch 200/469 | Loss: 1.4453 | Accuracy: 49.22%
+Epoch 7 | Batch 300/469 | Loss: 1.2654 | Accuracy: 64.84%
+Epoch 7 | Batch 400/469 | Loss: 1.2899 | Accuracy: 57.81%
+=== Epoch 7 Complete. Train Acc: 53.96%, Test Acc: 52.62% ===
+
+Epoch 8 | Batch 0/469 | Loss: 1.4469 | Accuracy: 54.69%
+Epoch 8 | Batch 100/469 | Loss: 1.4166 | Accuracy: 55.47%
+Epoch 8 | Batch 200/469 | Loss: 1.3863 | Accuracy: 51.56%
+Epoch 8 | Batch 300/469 | Loss: 1.3216 | Accuracy: 57.03%
+Epoch 8 | Batch 400/469 | Loss: 1.2530 | Accuracy: 63.28%
+=== Epoch 8 Complete. Train Acc: 55.91%, Test Acc: 56.87% ===
+
+Epoch 9 | Batch 0/469 | Loss: 1.3408 | Accuracy: 50.78%
+Epoch 9 | Batch 100/469 | Loss: 1.1338 | Accuracy: 64.84%
+Epoch 9 | Batch 200/469 | Loss: 1.1750 | Accuracy: 57.81%
+Epoch 9 | Batch 300/469 | Loss: 1.3579 | Accuracy: 58.59%
+Epoch 9 | Batch 400/469 | Loss: 1.2679 | Accuracy: 57.03%
+=== Epoch 9 Complete. Train Acc: 58.45%, Test Acc: 60.68% ===
+
+Epoch 10 | Batch 0/469 | Loss: 1.1186 | Accuracy: 58.59%
+Epoch 10 | Batch 100/469 | Loss: 1.2120 | Accuracy: 63.28%
+Epoch 10 | Batch 200/469 | Loss: 1.3494 | Accuracy: 50.78%
+Epoch 10 | Batch 300/469 | Loss: 1.2062 | Accuracy: 57.03%
+Epoch 10 | Batch 400/469 | Loss: 1.2680 | Accuracy: 57.81%
+=== Epoch 10 Complete. Train Acc: 60.66%, Test Acc: 60.77% ===
+
+Epoch 11 | Batch 0/469 | Loss: 1.0529 | Accuracy: 64.84%
+Epoch 11 | Batch 100/469 | Loss: 1.0084 | Accuracy: 72.66%
+Epoch 11 | Batch 200/469 | Loss: 1.1160 | Accuracy: 64.84%
+Epoch 11 | Batch 300/469 | Loss: 1.1768 | Accuracy: 58.59%
+Epoch 11 | Batch 400/469 | Loss: 1.0796 | Accuracy: 60.16%
+=== Epoch 11 Complete. Train Acc: 61.27%, Test Acc: 63.63% ===
+
+Epoch 12 | Batch 0/469 | Loss: 1.0206 | Accuracy: 68.75%
+Epoch 12 | Batch 100/469 | Loss: 0.9652 | Accuracy: 71.09%
+Epoch 12 | Batch 200/469 | Loss: 1.3640 | Accuracy: 57.03%
+Epoch 12 | Batch 300/469 | Loss: 1.2703 | Accuracy: 61.72%
+Epoch 12 | Batch 400/469 | Loss: 1.1930 | Accuracy: 51.56%
+=== Epoch 12 Complete. Train Acc: 62.63%, Test Acc: 66.42% ===
+
+Epoch 13 | Batch 0/469 | Loss: 0.7968 | Accuracy: 75.78%
+Epoch 13 | Batch 100/469 | Loss: 0.9656 | Accuracy: 70.31%
+Epoch 13 | Batch 200/469 | Loss: 1.1616 | Accuracy: 65.62%
+Epoch 13 | Batch 300/469 | Loss: 1.2454 | Accuracy: 58.59%
+Epoch 13 | Batch 400/469 | Loss: 0.9458 | Accuracy: 65.62%
+=== Epoch 13 Complete. Train Acc: 64.80%, Test Acc: 60.74% ===
+
+Epoch 14 | Batch 0/469 | Loss: 1.1851 | Accuracy: 57.81%
+Epoch 14 | Batch 100/469 | Loss: 1.1990 | Accuracy: 61.72%
+Epoch 14 | Batch 200/469 | Loss: 1.0363 | Accuracy: 66.41%
+Epoch 14 | Batch 300/469 | Loss: 0.9547 | Accuracy: 72.66%
+Epoch 14 | Batch 400/469 | Loss: 1.0441 | Accuracy: 68.75%
+=== Epoch 14 Complete. Train Acc: 65.15%, Test Acc: 63.68% ===
+
+Epoch 15 | Batch 0/469 | Loss: 1.0811 | Accuracy: 62.50%
+Epoch 15 | Batch 100/469 | Loss: 1.0244 | Accuracy: 65.62%
+Epoch 15 | Batch 200/469 | Loss: 1.0294 | Accuracy: 64.06%
+Epoch 15 | Batch 300/469 | Loss: 1.0549 | Accuracy: 64.06%
+Epoch 15 | Batch 400/469 | Loss: 0.9083 | Accuracy: 72.66%
+=== Epoch 15 Complete. Train Acc: 65.94%, Test Acc: 68.12% ===
