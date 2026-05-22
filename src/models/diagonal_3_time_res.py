@@ -1,94 +1,97 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import jax
+import jax.numpy as jnp
+import flax.linen as nn
 
 class Diagonal3TimeResLayer(nn.Module):
-    def __init__(self, input_size: int, n_curr: int, n_next: int = None, is_last: bool = False):
-        super().__init__()
-        self.is_last = is_last
-        self.n_curr = n_curr
+    hidden_size: int
+    is_last: bool
 
-        # W_up выносится наружу для предварительного расчета
-        self.w_up = nn.Linear(input_size, n_curr)
+    def setup(self):
+        self.diag_main = self.param('diag_main', jax.nn.initializers.zeros, (self.hidden_size,))
+        self.diag_up = self.param('diag_up', jax.nn.initializers.zeros, (self.hidden_size - 1,))
+        self.diag_down = self.param('diag_down', jax.nn.initializers.zeros, (self.hidden_size - 1,))
+        self.bias = self.param('bias', jax.nn.initializers.zeros, (self.hidden_size,))
 
-        # W_time: трехдиагональная матрица
-        self.diag_main = nn.Parameter(torch.Tensor(n_curr))
-        self.diag_up = nn.Parameter(torch.Tensor(n_curr - 1))
-        self.diag_down = nn.Parameter(torch.Tensor(n_curr - 1))
-
-        # W_down: связь от верхнего слоя
-        if not is_last:
-            self.w_down = nn.Linear(n_next, n_curr)
-
-        self.bias = nn.Parameter(torch.Tensor(n_curr))
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.kaiming_uniform_(self.w_up.weight, a=0.1)
         if not self.is_last:
-            nn.init.kaiming_uniform_(self.w_down.weight, a=0.1)
+            self.w_down = nn.Dense(
+                self.hidden_size, 
+                kernel_init=nn.initializers.variance_scaling(2.0, "fan_in", "uniform"), 
+                use_bias=False
+            )
 
-        nn.init.constant_(self.diag_main, 0.0)
-        nn.init.constant_(self.diag_up, 0.0)
-        nn.init.constant_(self.diag_down, 0.0)
-        nn.init.constant_(self.bias, 0)
-
-    def forward(self, x_proj_t: torch.Tensor, h_prev: torch.Tensor, h_next_layer_prev: torch.Tensor = None) -> torch.Tensor:
-        # 1. Вычисляем циклическую часть без in-place модификаций
+    def __call__(self, x_proj_t, h_prev, h_next_layer_prev=None):
         main_term = h_prev * self.diag_main
 
-        # Сдвиги через конкатенацию (эффективно для компилятора)
-        up_term = torch.cat([
-            h_prev[:, 1:] * self.diag_up,
-            torch.zeros(h_prev.size(0), 1, device=h_prev.device)
-        ], dim=1)
+        up_val = h_prev[:, 1:] * self.diag_up
+        up_term = jnp.concatenate([up_val, jnp.zeros((h_prev.shape[0], 1))], axis=1)
 
-        down_term = torch.cat([
-            torch.zeros(h_prev.size(0), 1, device=h_prev.device),
-            h_prev[:, :-1] * self.diag_down
-        ], dim=1)
+        down_val = h_prev[:, :-1] * self.diag_down
+        down_term = jnp.concatenate([jnp.zeros((h_prev.shape[0], 1)), down_val], axis=1)
 
         res_time = main_term + up_term + down_term
 
-        # 2. Собираем сигналы (используем уже готовый спроецированный x_proj_t)
         res = x_proj_t + res_time + self.bias
         if not self.is_last and h_next_layer_prev is not None:
             res = res + self.w_down(h_next_layer_prev)
 
-        # 3. Residual шаг
-        delta = F.leaky_relu(res, negative_slope=0.1)
+        delta = jax.nn.leaky_relu(res, negative_slope=0.1)
         return h_prev + delta
 
 
 class Diagonal3TimeResModel(nn.Module):
-    def __init__(self, input_size: int, hidden_size: int, num_layers: int, output_size: int = 1):
-        super().__init__()
-        self.num_layers = num_layers
-        self.hidden_size = hidden_size
-        self.layers = nn.ModuleList()
+    input_size: int
+    hidden_size: int
+    num_layers: int
+    output_size: int = 1
 
-        for i in range(num_layers):
-            is_last = (i == num_layers - 1)
-            self.layers.append(Diagonal3TimeResLayer(input_size, hidden_size, hidden_size, is_last))
+    def setup(self):
+        self.w_up_layers = [
+            nn.Dense(
+                self.hidden_size, 
+                kernel_init=nn.initializers.variance_scaling(2.0, "fan_in", "uniform"), 
+                use_bias=False
+            )
+            for _ in range(self.num_layers)
+        ]
+        
+        self.rec_layers = [
+            Diagonal3TimeResLayer(hidden_size=self.hidden_size, is_last=(i == self.num_layers - 1))
+            for i in range(self.num_layers)
+        ]
+        
+        self.fc = nn.Dense(self.output_size)
 
-        self.fc = nn.Linear(hidden_size, output_size)
+    def __call__(self, x):
+        batch_size, seq_len, _ = x.shape
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size, seq_len, _ = x.size()
+        # Предварительный расчет проекций
+        x_projected_list = [w_up(x) for w_up in self.w_up_layers]
+        x_projected = jnp.stack(x_projected_list, axis=0)  # (num_layers, batch_size, seq_len, hidden_size)
 
-        # Считаем проекцию входа один раз для всей последовательности
-        x_projected = [self.layers[l].w_up(x) for l in range(self.num_layers)]
+        # ФОРСИРОВАННАЯ ИНИЦИАЛИЗАЦИЯ: вызываем слои один раз фиктивно вне lax.scan
+        if self.is_initializing():
+            for l in range(self.num_layers):
+                dummy_x = jnp.zeros((batch_size, self.hidden_size))
+                dummy_h = jnp.zeros((batch_size, self.hidden_size))
+                h_next = dummy_h if l + 1 < self.num_layers else None
+                _ = self.rec_layers[l](dummy_x, dummy_h, h_next)
 
-        # Инициализация состояний
-        h = [torch.zeros(batch_size, self.hidden_size, device=x.device) for _ in range(self.num_layers)]
+        # Транспонируем для сканирования
+        x_projected_t = jnp.transpose(x_projected, (2, 0, 1, 3))  # (seq_len, num_layers, batch_size, hidden_size)
 
-        for t in range(seq_len):
+        init_h = jnp.zeros((self.num_layers, batch_size, self.hidden_size))
+
+        def scan_fn(carry_h, x_t):
             new_h = []
             for l in range(self.num_layers):
-                h_next = h[l+1] if l + 1 < self.num_layers else None
-                # Передаем предрассчитанный шаг x
-                h_curr_new = self.layers[l](x_projected[l][:, t, :], h[l], h_next)
+                h_prev = carry_h[l]
+                h_next = carry_h[l+1] if l + 1 < self.num_layers else None
+                h_curr_new = self.rec_layers[l](x_t[l], h_prev, h_next)
                 new_h.append(h_curr_new)
-            h = new_h
+            
+            new_h_stacked = jnp.stack(new_h, axis=0)
+            return new_h_stacked, None
 
-        return self.fc(h[-1])
+        final_h, _ = jax.lax.scan(scan_fn, init_h, x_projected_t)
+
+        return self.fc(final_h[-1])
