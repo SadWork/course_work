@@ -6,8 +6,8 @@ import jax.numpy as jnp
 import optax
 from flax.training import train_state
 
-from datasets import get_mnist_loaders
-from models import StandardStackedRNN, Diagonal3TimeResModel, SparseRandomTimeResModel
+from src.datasets import get_mnist_loaders
+from src.models import StandardStackedRNN, Diagonal3TimeResModel, SparseRandomTimeResModel
 
 def count_parameters(state):
     return sum(x.size for x in jax.tree_util.tree_leaves(state.params))
