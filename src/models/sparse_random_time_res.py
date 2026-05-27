@@ -39,7 +39,7 @@ class SparseRandomTimeResLayer(nn.Module):
             self.hidden_size, 
             use_bias=False, 
             name="w_up",
-            kernel_init=jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="normal")
+            kernel_init=jax.nn.initializers.variance_scaling(scale=0.001, mode="fan_in", distribution="normal")
         )
         up_term = w_up(h_spatial_prev)
 
@@ -58,16 +58,14 @@ class SparseRandomTimeResLayer(nn.Module):
                 self.hidden_size, 
                 use_bias=False, 
                 name="w_down",
-                kernel_init=jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="normal")
+                kernel_init=jax.nn.initializers.variance_scaling(scale=0.001, mode="fan_in", distribution="normal")
             )
             res = res + w_down(h_next_layer_prev)
 
         delta = jax.nn.leaky_relu(res, negative_slope=0.1)
 
-        if not self.is_first and h_spatial_prev.shape[-1] == self.hidden_size:
-            return delta + h_spatial_prev
-        else:
-            return delta
+        # Изменение: Остаточная связь идет по времени (добавляем h_temporal_prev вместо h_spatial_prev)
+        return delta + h_temporal_prev
 
 
 class SparseRandomTimeResModel(nn.Module):
@@ -169,7 +167,7 @@ class SparseRandomTimeResModel(nn.Module):
         return edges
 
     def get_computation_graph(self):
-        """Динамически генерирует вычислительный граф со случайной разреженностью (мета-описание)."""
+        """Динамически генерирует вычислительный граф со случайной разреженностью и временными остаточными связями."""
         import math
         if self.k is not None:
             active_k = self.k
@@ -185,7 +183,6 @@ class SparseRandomTimeResModel(nn.Module):
         nodes.append({'id': 'X', 'label': 'X', 'type': 'input'})
         
         for l in range(self.num_layers):
-            is_first = (l == 0)
             is_last = (l == self.num_layers - 1)
             
             nodes.append({'id': f'Dense_Up_{l}', 'label': '$W_{up}$\n(Dense)', 'type': 'op'})
@@ -197,9 +194,8 @@ class SparseRandomTimeResModel(nn.Module):
             nodes.append({'id': f'Sum_{l}', 'label': '+', 'type': 'sum'})
             nodes.append({'id': f'Act_{l}', 'label': 'LeakyReLU\n(0.1)', 'type': 'activation'})
             
-            if not is_first:
-                nodes.append({'id': f'ResSum_{l}', 'label': '+ (Residual)', 'type': 'sum'})
-                
+            # Остаточный сумматор во времени
+            nodes.append({'id': f'ResSum_{l}', 'label': '+ (Temp Res)', 'type': 'sum'})
             nodes.append({'id': f'H_{l}', 'label': f'H_{l}', 'type': 'state'})
             
             prev_state = 'X' if l == 0 else f'H_{l-1}'
@@ -216,12 +212,10 @@ class SparseRandomTimeResModel(nn.Module):
                 
             edges.append((f'Sum_{l}', f'Act_{l}', 0))
             
-            if not is_first:
-                edges.append((f'Act_{l}', f'ResSum_{l}', 0))
-                edges.append((prev_state, f'ResSum_{l}', 0))
-                edges.append((f'ResSum_{l}', f'H_{l}', 0))
-            else:
-                edges.append((f'Act_{l}', f'H_{l}', 0))
+            # Временная остаточная связь
+            edges.append((f'Act_{l}', f'ResSum_{l}', 0))
+            edges.append((f'H_{l}', f'ResSum_{l}', 1))     # Связь по времени (sigma=1)
+            edges.append((f'ResSum_{l}', f'H_{l}', 0))
                 
         # Классификатор
         nodes.append({'id': 'FC', 'label': 'FC\n(Dense)', 'type': 'op'})

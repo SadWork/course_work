@@ -380,15 +380,21 @@ def visualize_computation_graph(nodes, edges, title="RNN Detailed Computation Gr
         rad = 0.0
         if sigma == 1:
             if pu[0] > pv[0]:
-                # Обратная связь во времени (temporal feedback) - направляем глубокой нижней дугой
+                # Обратная связь во времени (temporal feedback / temporal residual)
+                # направляем глубокой красивой нижней дугой
                 rad = -0.55
             else:
                 rad = -0.2
         else:
             # Пространственные связи
-            # Skip-connection (прямой проброс сигнала через слой): высокая парабола сверху
             if 'ResSum' in v or 'Residual' in v:
-                rad = 0.45
+                u_layer = re.search(r'_(\d+)$', u)
+                v_layer = re.search(r'_(\d+)$', v)
+                # Выгибаем вверх ПОД подложку только если это послойная (межслойная) остаточная связь
+                if u_layer and v_layer and u_layer.group(1) != v_layer.group(1):
+                    rad = 0.45
+                else:
+                    rad = 0.0  # Локальные связи внутри слоя теперь строго ровные горизонтальные (например Act_l -> ResSum_l)
             elif pu[1] != pv[1]:
                 rad = 0.08 if pu[1] < pv[1] else -0.08
 
