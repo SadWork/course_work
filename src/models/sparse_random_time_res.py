@@ -35,7 +35,12 @@ class SparseRandomTimeResLayer(nn.Module):
 
     @nn.compact
     def __call__(self, h_spatial_prev, h_temporal_prev, h_next_layer_prev=None):
-        w_up = nn.Dense(self.hidden_size, use_bias=False, name="w_up")
+        w_up = nn.Dense(
+            self.hidden_size, 
+            use_bias=False, 
+            name="w_up",
+            kernel_init=jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="normal")
+        )
         up_term = w_up(h_spatial_prev)
 
         weights = self.param(
@@ -49,7 +54,12 @@ class SparseRandomTimeResLayer(nn.Module):
         res = up_term + time_term + self.param('bias', jax.nn.initializers.zeros, (self.hidden_size,))
 
         if not self.is_last and h_next_layer_prev is not None:
-            w_down = nn.Dense(self.hidden_size, use_bias=False, name="w_down")
+            w_down = nn.Dense(
+                self.hidden_size, 
+                use_bias=False, 
+                name="w_down",
+                kernel_init=jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="normal")
+            )
             res = res + w_down(h_next_layer_prev)
 
         delta = jax.nn.leaky_relu(res, negative_slope=0.1)
