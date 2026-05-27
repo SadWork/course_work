@@ -159,7 +159,7 @@ class SparseRandomTimeResModel(nn.Module):
         return edges
 
     def get_computation_graph(self):
-        """Динамически генерирует детальный вычислительный граф с учетом случайной разреженности k."""
+        """Динамически генерирует вычислительный граф со случайной разреженностью (мета-описание)."""
         import math
         if self.k is not None:
             active_k = self.k
@@ -172,29 +172,26 @@ class SparseRandomTimeResModel(nn.Module):
         nodes = []
         edges = []
         
-        nodes.append({'id': 'X', 'label': 'X', 'type': 'input', 'pos': (0.0, 0.0)})
+        nodes.append({'id': 'X', 'label': 'X', 'type': 'input'})
         
         for l in range(self.num_layers):
-            base_x = (l + 1) * 4.0
             is_first = (l == 0)
             is_last = (l == self.num_layers - 1)
             
-            # Подблоки слоя с динамическим отображением значения k
-            nodes.append({'id': f'Dense_Up_{l}', 'label': '$W_{up}$\n(Dense)', 'type': 'op', 'pos': (base_x, 1.0)})
-            nodes.append({'id': f'Sparse_Rec_{l}', 'label': f'Sparse Rec\n(k={active_k})', 'type': 'op', 'pos': (base_x, -1.0)})
+            nodes.append({'id': f'Dense_Up_{l}', 'label': '$W_{up}$\n(Dense)', 'type': 'op'})
+            nodes.append({'id': f'Sparse_Rec_{l}', 'label': f'Sparse Rec\n(k={active_k})', 'type': 'op'})
             
             if not is_last:
-                nodes.append({'id': f'Dense_Down_{l}', 'label': '$W_{down}$\n(Dense)', 'type': 'op', 'pos': (base_x, -2.0)})
+                nodes.append({'id': f'Dense_Down_{l}', 'label': '$W_{down}$\n(Dense)', 'type': 'op'})
                 
-            nodes.append({'id': f'Sum_{l}', 'label': '+', 'type': 'sum', 'pos': (base_x + 1.2, 0.0)})
-            nodes.append({'id': f'Act_{l}', 'label': 'LeakyReLU\n(0.1)', 'type': 'activation', 'pos': (base_x + 2.0, 0.0)})
+            nodes.append({'id': f'Sum_{l}', 'label': '+', 'type': 'sum'})
+            nodes.append({'id': f'Act_{l}', 'label': 'LeakyReLU\n(0.1)', 'type': 'activation'})
             
             if not is_first:
-                nodes.append({'id': f'ResSum_{l}', 'label': '+ (Residual)', 'type': 'sum', 'pos': (base_x + 2.8, 0.0)})
+                nodes.append({'id': f'ResSum_{l}', 'label': '+ (Residual)', 'type': 'sum'})
                 
-            nodes.append({'id': f'H_{l}', 'label': f'H_{l}', 'type': 'state', 'pos': (base_x + 3.4, 0.0)})
+            nodes.append({'id': f'H_{l}', 'label': f'H_{l}', 'type': 'state'})
             
-            # Связи
             prev_state = 'X' if l == 0 else f'H_{l-1}'
             edges.append((prev_state, f'Dense_Up_{l}', 0))
             edges.append((f'H_{l}', f'Sparse_Rec_{l}', 1))
@@ -216,10 +213,9 @@ class SparseRandomTimeResModel(nn.Module):
             else:
                 edges.append((f'Act_{l}', f'H_{l}', 0))
                 
-        # Выходной классификатор
-        fc_x = (self.num_layers + 1) * 4.0
-        nodes.append({'id': 'FC', 'label': 'FC\n(Dense)', 'type': 'op', 'pos': (fc_x, 0.0)})
-        nodes.append({'id': 'Y', 'label': 'Y', 'type': 'output', 'pos': (fc_x + 1.2, 0.0)})
+        # Классификатор
+        nodes.append({'id': 'FC', 'label': 'FC\n(Dense)', 'type': 'op'})
+        nodes.append({'id': 'Y', 'label': 'Y', 'type': 'output'})
         
         edges.append((f'H_{self.num_layers-1}', 'FC', 0))
         edges.append(('FC', 'Y', 0))

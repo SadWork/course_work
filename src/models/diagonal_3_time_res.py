@@ -11,7 +11,12 @@ class Diagonal3TimeResLayer(nn.Module):
 
     @nn.compact
     def __call__(self, h_spatial_prev, h_temporal_prev, h_next_layer_prev=None):
-        w_up = nn.Dense(self.hidden_size, use_bias=False, name="w_up")
+        w_up = nn.Dense(
+            self.hidden_size, 
+            use_bias=False, 
+            name="w_up",
+            kernel_init=jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="normal")
+        )
         up_term = w_up(h_spatial_prev)
 
         diag_main = self.param('diag_main', jax.nn.initializers.zeros, (self.hidden_size,))
@@ -30,7 +35,12 @@ class Diagonal3TimeResLayer(nn.Module):
         res = up_term + time_term + self.param('bias', jax.nn.initializers.zeros, (self.hidden_size,))
 
         if not self.is_last and h_next_layer_prev is not None:
-            w_down = nn.Dense(self.hidden_size, use_bias=False, name="w_down")
+            w_down = nn.Dense(
+                self.hidden_size, 
+                use_bias=False, 
+                name="w_down",
+                kernel_init=jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="normal")
+            )
             res = res + w_down(h_next_layer_prev)
 
         delta = jax.nn.leaky_relu(res, negative_slope=0.1)
@@ -120,32 +130,29 @@ class Diagonal3TimeResModel(nn.Module):
         return edges
 
     def get_computation_graph(self):
-        """Динамически генерирует детальный вычислительный граф с учетом послойных особенностей."""
+        """Динамически генерирует мета-описание вычислительного графа без жесткой координатной привязки."""
         nodes = []
         edges = []
         
-        nodes.append({'id': 'X', 'label': 'X', 'type': 'input', 'pos': (0.0, 0.0)})
+        nodes.append({'id': 'X', 'label': 'X', 'type': 'input'})
         
         for l in range(self.num_layers):
-            base_x = (l + 1) * 4.0
             is_first = (l == 0)
             is_last = (l == self.num_layers - 1)
             
-            # Подблоки слоя
-            nodes.append({'id': f'Dense_Up_{l}', 'label': '$W_{up}$\n(Dense)', 'type': 'op', 'pos': (base_x, 1.0)})
-            nodes.append({'id': f'Tridiag_{l}', 'label': 'Tridiagonal\nRecurrence', 'type': 'op', 'pos': (base_x, -1.0)})
+            nodes.append({'id': f'Dense_Up_{l}', 'label': '$W_{up}$\n(Dense)', 'type': 'op'})
+            nodes.append({'id': f'Tridiag_{l}', 'label': 'Tridiagonal\nRecurrence', 'type': 'op'})
             
             if not is_last:
-                nodes.append({'id': f'Dense_Down_{l}', 'label': '$W_{down}$\n(Dense)', 'type': 'op', 'pos': (base_x, -2.0)})
+                nodes.append({'id': f'Dense_Down_{l}', 'label': '$W_{down}$\n(Dense)', 'type': 'op'})
                 
-            nodes.append({'id': f'Sum_{l}', 'label': '+', 'type': 'sum', 'pos': (base_x + 1.2, 0.0)})
-            nodes.append({'id': f'Act_{l}', 'label': 'LeakyReLU\n(0.1)', 'type': 'activation', 'pos': (base_x + 2.0, 0.0)})
+            nodes.append({'id': f'Sum_{l}', 'label': '+', 'type': 'sum'})
+            nodes.append({'id': f'Act_{l}', 'label': 'LeakyReLU\n(0.1)', 'type': 'activation'})
             
             if not is_first:
-                # Наличие сумматора для Residual Skip-connection
-                nodes.append({'id': f'ResSum_{l}', 'label': '+ (Residual)', 'type': 'sum', 'pos': (base_x + 2.8, 0.0)})
+                nodes.append({'id': f'ResSum_{l}', 'label': '+ (Residual)', 'type': 'sum'})
                 
-            nodes.append({'id': f'H_{l}', 'label': f'H_{l}', 'type': 'state', 'pos': (base_x + 3.4, 0.0)})
+            nodes.append({'id': f'H_{l}', 'label': f'H_{l}', 'type': 'state'})
             
             # Связи
             prev_state = 'X' if l == 0 else f'H_{l-1}'
@@ -164,16 +171,14 @@ class Diagonal3TimeResModel(nn.Module):
             
             if not is_first:
                 edges.append((f'Act_{l}', f'ResSum_{l}', 0))
-                # Skip-connection (прямой проброс сигнала минуя слой)
-                edges.append((prev_state, f'ResSum_{l}', 0))
+                edges.append((prev_state, f'ResSum_{l}', 0))  # Высокий арочный Skip-connection
                 edges.append((f'ResSum_{l}', f'H_{l}', 0))
             else:
                 edges.append((f'Act_{l}', f'H_{l}', 0))
                 
-        # Выходной слой классификатора
-        fc_x = (self.num_layers + 1) * 4.0
-        nodes.append({'id': 'FC', 'label': 'FC\n(Dense)', 'type': 'op', 'pos': (fc_x, 0.0)})
-        nodes.append({'id': 'Y', 'label': 'Y', 'type': 'output', 'pos': (fc_x + 1.2, 0.0)})
+        # Выходной классификатор
+        nodes.append({'id': 'FC', 'label': 'FC\n(Dense)', 'type': 'op'})
+        nodes.append({'id': 'Y', 'label': 'Y', 'type': 'output'})
         
         edges.append((f'H_{self.num_layers-1}', 'FC', 0))
         edges.append(('FC', 'Y', 0))

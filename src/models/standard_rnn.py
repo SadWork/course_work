@@ -68,42 +68,31 @@ class StandardStackedRNN(nn.Module):
         return edges
 
     def get_computation_graph(self):
-        """Динамически генерирует детальный вычислительный граф с учетом количества слоев."""
+        """Динамически генерирует мета-описание вычислительного графа стандартного RNN."""
         nodes = []
         edges = []
         
-        # Входной узел
-        nodes.append({'id': 'X', 'label': 'X', 'type': 'input', 'pos': (0.0, 0.0)})
+        nodes.append({'id': 'X', 'label': 'X', 'type': 'input'})
         
         for l in range(self.num_layers):
-            base_x = (l + 1) * 4.0
+            nodes.append({'id': f'Dense_X_{l}', 'label': '$W_x$\n(Dense)', 'type': 'op'})
+            nodes.append({'id': f'Dense_H_{l}', 'label': '$W_h$\n(Dense)', 'type': 'op'})
+            nodes.append({'id': f'Sum_{l}', 'label': '+', 'type': 'sum'})
+            nodes.append({'id': f'Act_{l}', 'label': 'Tanh', 'type': 'activation'})
+            nodes.append({'id': f'H_{l}', 'label': f'H_{l}', 'type': 'state'})
             
-            # Узлы операций внутри ячейки
-            nodes.append({'id': f'Dense_X_{l}', 'label': f'$W_x$\n(Dense)', 'type': 'op', 'pos': (base_x, 1.0)})
-            nodes.append({'id': f'Dense_H_{l}', 'label': f'$W_h$\n(Dense)', 'type': 'op', 'pos': (base_x, -1.0)})
-            nodes.append({'id': f'Sum_{l}', 'label': '+', 'type': 'sum', 'pos': (base_x + 1.2, 0.0)})
-            nodes.append({'id': f'Act_{l}', 'label': 'Tanh', 'type': 'activation', 'pos': (base_x + 2.2, 0.0)})
-            nodes.append({'id': f'H_{l}', 'label': f'H_{l}', 'type': 'state', 'pos': (base_x + 3.2, 0.0)})
-            
-            # Направление прямого пространственного сигнала
             prev_state = 'X' if l == 0 else f'H_{l-1}'
             edges.append((prev_state, f'Dense_X_{l}', 0))
-            
-            # Временной рекуррентный цикл к Dense_H
             edges.append((f'H_{l}', f'Dense_H_{l}', 1))
             
-            # Сложение результатов проекций
             edges.append((f'Dense_X_{l}', f'Sum_{l}', 0))
             edges.append((f'Dense_H_{l}', f'Sum_{l}', 0))
             
-            # Применение нелинейности Tanh
             edges.append((f'Sum_{l}', f'Act_{l}', 0))
             edges.append((f'Act_{l}', f'H_{l}', 0))
             
-        # Классификатор (FC)
-        fc_x = (self.num_layers + 1) * 4.0
-        nodes.append({'id': 'FC', 'label': 'FC\n(Dense)', 'type': 'op', 'pos': (fc_x, 0.0)})
-        nodes.append({'id': 'Y', 'label': 'Y', 'type': 'output', 'pos': (fc_x + 1.2, 0.0)})
+        nodes.append({'id': 'FC', 'label': 'FC\n(Dense)', 'type': 'op'})
+        nodes.append({'id': 'Y', 'label': 'Y', 'type': 'output'})
         
         edges.append((f'H_{self.num_layers-1}', 'FC', 0))
         edges.append(('FC', 'Y', 0))
