@@ -27,5 +27,10 @@ SOURCE_FILES=$(find "${SOURCE_FILES_DIR}" \
 
 source "${ONEFILELLM_PATH}/.venv/bin/activate" # активируем переменное окружение из папки onefilellm!
 python "${ONEFILELLM_PATH}/onefilellm.py" ${SOURCE_FILES}
-rm -f output.xml # удаляем временный файл (он создается в директории запуска)
+if [ "$REMOVE_OUTPUT" = "true" ]; then
+    rm -f output.xml
+    echo "Временный файл output.xml удален (локальный режим)."
+else
+    echo "Файл output.xml сохранен (серверный режим)."
+fi
 echo ${SOURCE_FILES}
