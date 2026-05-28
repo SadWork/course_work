@@ -124,7 +124,7 @@ class ComparativeStackedRNN(nn.Module):
         ]
         self.fc = nn.Dense(self.output_size)
 
-    def __call__(self, x):
+    def __call__(self, x, perturbations=None):
         batch_size, seq_len, input_size = x.shape
 
         if self.is_initializing():
@@ -137,17 +137,26 @@ class ComparativeStackedRNN(nn.Module):
 
         x_t = jnp.transpose(x, (1, 0, 2))
         init_h = jnp.zeros((self.num_layers, batch_size, self.hidden_size))
+        
+        # Передаем индексы времени t во время сканирования
+        t_indices = jnp.arange(seq_len)
 
-        def scan_fn(carry_h, x_step):
+        def scan_fn(carry_h, x_step_and_t):
+            x_step, t = x_step_and_t
             new_h = []
             curr_spatial = x_step
             for l in range(self.num_layers):
                 h_temporal_prev = carry_h[l]
                 h_curr_new = self.layers[l](curr_spatial, h_temporal_prev)
+                
+                # Добавляем малое возмущение для снятия градиента по состоянию
+                if perturbations is not None:
+                    h_curr_new = h_curr_new + perturbations[l, t]
+                    
                 new_h.append(h_curr_new)
                 curr_spatial = h_curr_new
             new_h_stacked = jnp.stack(new_h, axis=0)
             return new_h_stacked, None
 
-        final_h, _ = jax.lax.scan(scan_fn, init_h, x_t)
+        final_h, _ = jax.lax.scan(scan_fn, init_h, (x_t, t_indices))
         return self.fc(final_h[-1])

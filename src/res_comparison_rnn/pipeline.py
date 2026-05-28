@@ -121,6 +121,37 @@ def analyze_gradient_flow_rnn(state, grads):
         layer_stats.append(stats)
     return layer_stats
 
+
+
+def compute_state_gradients(state, batch_x, batch_y, is_regression, num_layers, seq_len, hidden_size):
+    """
+    Вычисляет среднюю норму градиента по скрытому состоянию h_t^l 
+    на каждом слое l и шаге времени t.
+    """
+    batch_size = batch_x.shape[0]
+    # Создаем тензор нулевых возмущений, по которому будем брать градиент
+    init_perturbations = jnp.zeros((num_layers, seq_len, batch_size, hidden_size))
+
+    def loss_fn_with_perturbations(perturbations):
+        if is_regression:
+            preds = state.apply_fn({'params': state.params}, batch_x, perturbations=perturbations)
+            loss = jnp.mean((preds.squeeze(-1) - batch_y.squeeze(-1)) ** 2)
+        else:
+            logits = state.apply_fn({'params': state.params}, batch_x, perturbations=perturbations)
+            one_hot_y = jax.nn.one_hot(batch_y, 10)
+            loss = optax.softmax_cross_entropy(logits=logits, labels=one_hot_y).mean()
+        return loss
+
+    grad_fn = jax.grad(loss_fn_with_perturbations)
+    state_grads = grad_fn(init_perturbations)  # Форма: (L, T, B, H)
+    
+    # Считаем L2 норму по скрытому размерности H, затем среднее по батчу B
+    state_grad_norms = jnp.linalg.norm(state_grads, axis=-1)  # Форма: (L, T, B)
+    mean_state_grad_norms = jnp.mean(state_grad_norms, axis=-1)  # Форма: (L, T)
+    
+    return mean_state_grad_norms
+
+
 def run_rnn_pipeline(
     model_type: str,
     depth: int,
@@ -179,6 +210,11 @@ def run_rnn_pipeline(
     # Снимаем градиентный поток на инициализации
     init_grads = compute_rnn_gradients(state, ref_x_jax, ref_y_jax, is_regression)
     gradient_flow_init = analyze_gradient_flow_rnn(state, init_grads)
+    state_grads_init = compute_state_gradients(
+        state, ref_x_jax, ref_y_jax, is_regression, 
+        depth, seq_len, hidden_size
+    )
+
     
     history = {
         "train_loss": [],
@@ -252,6 +288,10 @@ def run_rnn_pipeline(
     # Снимаем градиентный поток в конце обучения
     final_grads = compute_rnn_gradients(state, ref_x_jax, ref_y_jax, is_regression)
     gradient_flow_final = analyze_gradient_flow_rnn(state, final_grads)
+    state_grads_final = compute_state_gradients(
+        state, ref_x_jax, ref_y_jax, is_regression, 
+        depth, seq_len, hidden_size
+    )
     
     cpu_params = jax.device_get(state.params)
     
@@ -272,6 +312,8 @@ def run_rnn_pipeline(
         "history": history,
         "gradient_flow_init": gradient_flow_init,
         "gradient_flow_final": gradient_flow_final,
+        "state_grads_init": jax.device_get(state_grads_init),
+        "state_grads_final": jax.device_get(state_grads_final),
         "params": cpu_params
     }
     
