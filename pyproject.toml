@@ -3,22 +3,28 @@ name = "course-work"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12, <3.13"
 dependencies = [
-    "flax>=0.12.7",
+    "flax>=0.10.0",       # Разрешаем установку совместимых старых версий Flax
     "matplotlib>=3.10.9",
     "numpy>=2.4.6",
-    "optax>=0.2.8",
+    "optax>=0.2.0",       # Расслабляем ограничение по Optax для совместимости с JAX 0.5.0
     "torch>=2.12.0",
     "torchvision>=0.27.0",
 ]
 
-# Разделение специфичных зависимостей для GPU и CPU
 [project.optional-dependencies]
 cuda = [
-    "jax[cuda12]>=0.10.1",
+    "jax[cuda12]>=0.4.0",
 ]
 cpu = [
-    "jax>=0.10.1",
-    "jaxlib>=0.10.1",
+    "jax>=0.4.0",
+    "jaxlib>=0.4.0",
+]
+metal = [
+    "jax==0.5.0",       
+    "jaxlib==0.5.0",    
+    "jax-metal==0.1.1", 
+    "flax<=0.10.4",       # Ограничиваем Flax
+    "optax<=0.2.4",       # Ограничиваем Optax совместимой версией для Metal
 ]

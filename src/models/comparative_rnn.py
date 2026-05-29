@@ -12,8 +12,9 @@ class ComparativeRNNLayer(nn.Module):
     layer_idx: int
     num_layers: int  # L
     seq_len: int     # T
-    model_type: str = 'standard'  # 'standard', 'spatial', 'temporal', 'alternating', 'random_balanced', 'random_uniform'
+    model_type: str = 'standard'
     seed: int = 42
+    custom_scale: float = None  # Добавлено для эмпирического поиска
 
     def setup(self):
         if self.model_type in ['random_balanced', 'random_uniform']:
@@ -37,8 +38,10 @@ class ComparativeRNNLayer(nn.Module):
     def __call__(self, h_spatial_prev, h_temporal_prev):
         batch_size, spatial_dim = h_spatial_prev.shape
         
-        # Определяем масштаб начальной дисперсии весов рекуррентного блока
-        if self.model_type == 'spatial':
+        # Если передан кастомный масштаб, приоритетно используем его
+        if self.custom_scale is not None:
+            scale_val = self.custom_scale
+        elif self.model_type == 'spatial':
             scale_val = 1.0 / self.num_layers
         elif self.model_type == 'temporal':
             scale_val = 1.0 / np.sqrt(self.seq_len)
@@ -49,6 +52,8 @@ class ComparativeRNNLayer(nn.Module):
                 scale_val = 1.0 / self.num_layers
         elif self.model_type == 'random_uniform':
             scale_val = min(1.0 / np.sqrt(self.seq_len), 1.0 / np.sqrt(self.num_layers))
+        elif self.model_type == 'random_balanced':
+            scale_val = 0.1
         else:
             scale_val = 1.0
             
@@ -56,7 +61,6 @@ class ComparativeRNNLayer(nn.Module):
             self.hidden_size, 
             use_bias=False, 
             name="w_up",
-            # Масштабируем дисперсию инициализации весов
             kernel_init=jax.nn.initializers.variance_scaling(scale=scale_val, mode="fan_in", distribution="normal")
         )
         w_rec = nn.Dense(
@@ -69,19 +73,15 @@ class ComparativeRNNLayer(nn.Module):
         cell_input = w_up(h_spatial_prev) + w_rec(h_temporal_prev)
         delta = jax.nn.tanh(cell_input)
         
-        # Остаточные связи строго равны 1.0, чтобы градиенты не затухали
         if self.model_type == 'standard':
             return delta
-            
         elif self.model_type == 'spatial':
             if spatial_dim != self.hidden_size:
                 return delta
             else:
                 return delta + h_spatial_prev
-            
         elif self.model_type == 'temporal':
             return delta + h_temporal_prev
-            
         elif self.model_type == 'alternating':
             if self.layer_idx % 2 == 0:
                 return delta + h_temporal_prev
@@ -90,12 +90,10 @@ class ComparativeRNNLayer(nn.Module):
                     return delta
                 else:
                     return delta + h_spatial_prev
-                
         elif self.model_type in ['random_balanced', 'random_uniform']:
             concat_state = jnp.concatenate([h_temporal_prev, h_spatial_prev], axis=-1)
             skip = concat_state[:, self.indices]
             return delta + skip
-            
         else:
             raise ValueError(f"Unknown model_type: {self.model_type}")
 
@@ -108,6 +106,7 @@ class ComparativeStackedRNN(nn.Module):
     output_size: int = 10
     model_type: str = 'standard'
     seed: int = 42
+    custom_scale: float = None  # Добавлено для проброса
 
     def setup(self):
         self.layers = [
@@ -118,7 +117,8 @@ class ComparativeStackedRNN(nn.Module):
                 num_layers=self.num_layers,
                 seq_len=self.seq_len,
                 model_type=self.model_type,
-                seed=self.seed + l
+                seed=self.seed + l,
+                custom_scale=self.custom_scale
             )
             for l in range(self.num_layers)
         ]
@@ -137,8 +137,6 @@ class ComparativeStackedRNN(nn.Module):
 
         x_t = jnp.transpose(x, (1, 0, 2))
         init_h = jnp.zeros((self.num_layers, batch_size, self.hidden_size))
-        
-        # Передаем индексы времени t во время сканирования
         t_indices = jnp.arange(seq_len)
 
         def scan_fn(carry_h, x_step_and_t):
@@ -149,7 +147,6 @@ class ComparativeStackedRNN(nn.Module):
                 h_temporal_prev = carry_h[l]
                 h_curr_new = self.layers[l](curr_spatial, h_temporal_prev)
                 
-                # Добавляем малое возмущение для снятия градиента по состоянию
                 if perturbations is not None:
                     h_curr_new = h_curr_new + perturbations[l, t]
                     

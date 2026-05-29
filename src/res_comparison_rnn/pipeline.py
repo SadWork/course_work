@@ -170,6 +170,7 @@ def run_rnn_pipeline(
     set_global_seeds(seed)
     is_regression = (dataset_name == "adding")
     
+    print(f"Активные устройства JAX для данного запуска: {jax.devices()}")
     print(f"\n>>> Запуск RNN: {model_type.upper()} | L={depth} | W={hidden_size} | {dataset_name.upper()} (Seed: {seed}) <<<")
     
     input_size = 2 if is_regression else 1
@@ -197,7 +198,7 @@ def run_rnn_pipeline(
         
         # Фиксированный набор тестов для Adding Problem
         set_global_seeds(seed + 1000)
-        val_inputs, val_targets = get_adding_data(batch_size=2000, seq_len=seq_len)
+        val_inputs, val_targets = get_adding_data(batch_size=batch_size, seq_len=seq_len)
         test_x_jax = jnp.array(val_inputs.numpy())
         test_y_jax = jnp.array(val_targets.numpy())
         set_global_seeds(seed)  # Возврат к основному сиду

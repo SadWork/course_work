@@ -119,6 +119,7 @@ def run_training_pipeline(
     # 1. Сброс глобальных генераторов перед стартом каждого эксперимента
     set_global_seeds(seed)
     
+    print(f"Активные устройства JAX для данного запуска: {jax.devices()}")
     print(f"\n>>> Запуск: {model_type.upper()} | L={depth} | W={hidden_size} | {dataset_name.upper()} (Seed: {seed}) <<<")
     
     model = ComparativeResNetMLP(
