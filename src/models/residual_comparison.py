@@ -51,6 +51,7 @@ class ComparativeResNetMLP(nn.Module):
     output_size: int = 10
     block_type: str = 'standard'
     seed: int = 42
+    custom_scale: float = None  # Поддержка оптимизированного масштаба
 
     @nn.compact
     def __call__(self, x):
@@ -63,7 +64,9 @@ class ComparativeResNetMLP(nn.Module):
         # Рассчитываем масштаб весов в зависимости от общего числа блоков N.
         # Для no_skip используем стандартный масштаб 1.0, 
         # так как там нет суммирования с обходным путем.
-        if self.block_type in ['standard', 'random_skip']:
+        if self.custom_scale is not None:
+            block_scale = self.custom_scale
+        elif self.block_type in ['standard', 'random_skip']:
             block_scale = 1.0 / (self.num_blocks)
         else:
             block_scale = 1.0

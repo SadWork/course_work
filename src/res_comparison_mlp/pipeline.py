@@ -100,6 +100,105 @@ def analyze_gradient_flow(state, grads):
             
     return layer_stats
 
+# --- Вспомогательные функции для автоматического подбора масштаба в MLP ---
+
+def compute_mlp_gradients_for_scale(scale_val, model_type, depth, hidden_size, x_jax, y_jax):
+    """Вычисляет нормы градиентов первого и последнего блоков MLP для заданного масштаба весов."""
+    model = ComparativeResNetMLP(
+        hidden_size=hidden_size,
+        num_blocks=depth,
+        output_size=10,
+        block_type=model_type,
+        seed=42,
+        custom_scale=scale_val
+    )
+    rng = jax.random.PRNGKey(42)
+    params = model.init(rng, x_jax)['params']
+    
+    def loss_fn(p):
+        logits = model.apply({'params': p}, x_jax)
+        one_hot_y = jax.nn.one_hot(y_jax, 10)
+        return optax.softmax_cross_entropy(logits=logits, labels=one_hot_y).mean()
+        
+    grad_fn = jax.grad(loss_fn)
+    grads = grad_fn(params)
+    
+    block_keys = [k for k in grads.keys() if k.startswith("ComparativeResBlock_")]
+    block_keys = sorted(block_keys, key=lambda k: int(k.split("_")[1]))
+    
+    if not block_keys:
+        return 0.0, 0.0
+        
+    first_block = block_keys[0]
+    last_block = block_keys[-1]
+    
+    def get_kernel_grad_norm(block_name):
+        block_grads = grads[block_name]
+        dense_key = None
+        for k in block_grads.keys():
+            if k.lower().startswith('dense'):
+                dense_key = k
+                break
+        if dense_key is not None:
+            return float(jnp.linalg.norm(block_grads[dense_key]['kernel']))
+        return 0.0
+        
+    g_start = get_kernel_grad_norm(first_block)
+    g_end = get_kernel_grad_norm(last_block)
+    return g_start, g_end
+
+def search_optimal_scale_mlp_in_pipeline(model_type, depth, hidden_size, x_jax, y_jax, target_log_ratio=0.0):
+    """
+    Бинарный поиск оптимального scale_val для MLP.
+    Цель: минимизировать разность логарифмов норм градиентов первого и последнего блоков.
+    """
+    if model_type == 'no_skip':
+        return 1.0  # Для архитектуры без связей пропуска используем стандартную инициализацию
+
+    scale_low = 0.01
+    scale_high = 3.0
+    max_iters = 12
+    tol = 0.01
+
+    low_b = scale_low
+    high_b = scale_high
+    best_scale = (scale_low + scale_high) / 2.0
+    best_ratio_diff = float('inf')
+
+    for i in range(max_iters):
+        mid = (low_b + high_b) / 2.0
+        try:
+            g_start, g_end = compute_mlp_gradients_for_scale(mid, model_type, depth, hidden_size, x_jax, y_jax)
+            avg_log_ratio = float(jnp.log(g_start + 1e-35) - jnp.log(g_end + 1e-35))
+            avg_ratio = np.exp(avg_log_ratio)
+
+            print(f"    Итерация {i+1:02d} | scale={mid:.5f} | log_ratio={avg_log_ratio:.4f} | ratio={avg_ratio:.2e}")
+
+            if np.isnan(avg_log_ratio) or np.isinf(avg_log_ratio):
+                high_b = mid
+                continue
+
+            current_diff = abs(avg_log_ratio - target_log_ratio)
+            if current_diff < best_ratio_diff:
+                best_ratio_diff = current_diff
+                best_scale = mid
+
+            # Если градиент на первом блоке меньше, чем на последнем (затухание) -> увеличиваем веса
+            if avg_log_ratio < target_log_ratio:
+                low_b = mid
+            else:
+                high_b = mid
+
+            if current_diff < tol:
+                break
+        except Exception:
+            high_b = mid
+            continue
+
+    return float(best_scale)
+
+# --- Основной пайплайн обучения ---
+
 def run_training_pipeline(
     model_type: str,
     depth: int,
@@ -114,31 +213,43 @@ def run_training_pipeline(
     save_dir: str
 ):
     """
-    Запускает детерминированный и воспроизводимый цикл обучения.
+    Запускает детерминированный и воспроизводимый цикл обучения с автоподбором масштаба.
     """
     # 1. Сброс глобальных генераторов перед стартом каждого эксперимента
     set_global_seeds(seed)
     
     print(f"Активные устройства JAX для данного запуска: {jax.devices()}")
     print(f"\n>>> Запуск: {model_type.upper()} | L={depth} | W={hidden_size} | {dataset_name.upper()} (Seed: {seed}) <<<")
+
+    # Извлекаем опорный батч для автоподбора масштаба и анализа градиентного потока
+    ref_batch_x, ref_batch_y = next(iter(train_loader))
+    ref_x_jax = jnp.array(ref_batch_x.numpy())
+    ref_y_jax = jnp.array(ref_batch_y.numpy())
+
+    # 2. Поиск оптимального масштаба весов (scale_val) для текущей конфигурации
+    print(f"  [Автоподбор scale_val] Запуск бинарного поиска оптимальной инициализации...")
+    opt_scale = search_optimal_scale_mlp_in_pipeline(
+        model_type=model_type,
+        depth=depth,
+        hidden_size=hidden_size,
+        x_jax=ref_x_jax,
+        y_jax=ref_y_jax
+    )
+    print(f"  [Автоподбор scale_val] Выбран оптимальный scale_val: {opt_scale:.5f}")
     
     model = ComparativeResNetMLP(
         hidden_size=hidden_size,
         num_blocks=depth,
         output_size=10,
         block_type=model_type,
-        seed=seed
+        seed=seed,
+        custom_scale=opt_scale
     )
     
     # Инициализация JAX-состояния с воспроизводимым ключом
     rng = jax.random.PRNGKey(seed)
     dummy_shape = (batch_size, 28, 28, 1)
     state = create_train_state(model, rng, lr, dummy_shape)
-    
-    # Извлекаем опорный батч для анализа градиентного потока
-    ref_batch_x, ref_batch_y = next(iter(train_loader))
-    ref_x_jax = jnp.array(ref_batch_x.numpy())
-    ref_y_jax = jnp.array(ref_batch_y.numpy())
     
     # Анализ градиентного потока на инициализации
     init_grads = compute_block_gradients(state, ref_x_jax, ref_y_jax)
@@ -205,7 +316,8 @@ def run_training_pipeline(
             "lr": lr,
             "batch_size": batch_size,
             "seed": seed,
-            "elapsed_time": elapsed_time
+            "elapsed_time": elapsed_time,
+            "scale_val": opt_scale
         },
         "history": history,
         "gradient_flow_init": gradient_flow_init,
@@ -214,7 +326,7 @@ def run_training_pipeline(
     }
     
     os.makedirs(save_dir, exist_ok=True)
-    filename = f"{dataset_name}_{model_type}_L{depth}_W{hidden_size}_lr{lr}_epochs{epochs}_seed{seed}.pkl"
+    filename = f"{dataset_name}_{model_type}_L{depth}_W{hidden_size}_scale{opt_scale:.4f}_seed{seed}.pkl"
     save_path = os.path.join(save_dir, filename)
     
     with open(save_path, "wb") as f:
