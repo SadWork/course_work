@@ -41,10 +41,13 @@ def analyze_diagnostics(payloads):
         seq_len = meta.get("seq_len", 0)
         dataset = meta.get("dataset_name", "unknown").upper()
         
+        scale_val = meta.get("scale_val", None)
+        scale_str = f"{scale_val:.5f}" if isinstance(scale_val, (int, float)) else "default"
+        
         final_train_loss = history.get("train_loss", [-1])[-1]
         
         print(f"\nФайл: {filename}")
-        print(f"Конфигурация: {model_type} | L={depth} | T={seq_len} | Train Loss={final_train_loss:.4f}")
+        print(f"Конфигурация: {model_type} | L={depth} | T={seq_len} | scale_val={scale_str} | Train Loss={final_train_loss:.4f}")
         
         # Считываем новые координатные срезы градиентов
         state_grads_init = data.get("state_grads_init", None)

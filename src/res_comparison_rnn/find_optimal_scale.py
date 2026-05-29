@@ -68,14 +68,9 @@ def search_optimal_scale(model_type, depth, hidden_size, seq_len, x_jax, y_jax, 
         try:
             mean_grads = compute_gradients_for_scale(scale, model_type, depth, hidden_size, seq_len, x_jax, y_jax)
             
-            log_ratios = []
-            for l in range(depth):
-                g_start = mean_grads[l, 0]
-                g_end = mean_grads[l, -1]
-                log_ratio = jnp.log(g_start + 1e-35) - jnp.log(g_end + 1e-35)
-                log_ratios.append(log_ratio)
-                
-            avg_log_ratio = float(np.mean(log_ratios))
+            g_start = mean_grads[0, 0]
+            g_end = mean_grads[0, -1]
+            avg_log_ratio = float(jnp.log(g_start + 1e-35) - jnp.log(g_end + 1e-35))
             
             if np.isnan(avg_log_ratio) or np.isinf(avg_log_ratio):
                 metric = float('inf')
@@ -123,14 +118,9 @@ def search_optimal_scale(model_type, depth, hidden_size, seq_len, x_jax, y_jax, 
         try:
             mean_grads = compute_gradients_for_scale(mid, model_type, depth, hidden_size, seq_len, x_jax, y_jax)
             
-            log_ratios = []
-            for l in range(depth):
-                g_start = mean_grads[l, 0]
-                g_end = mean_grads[l, -1]
-                log_ratio = jnp.log(g_start + 1e-35) - jnp.log(g_end + 1e-35)
-                log_ratios.append(log_ratio)
-                
-            avg_log_ratio = float(np.mean(log_ratios))
+            g_start = mean_grads[0, 0]
+            g_end = mean_grads[0, -1]
+            avg_log_ratio = float(jnp.log(g_start + 1e-35) - jnp.log(g_end + 1e-35))
             avg_ratio = np.exp(avg_log_ratio)
             
             print(f"    Итерация {i+1:02d} | scale={mid:.5f} | log_ratio={avg_log_ratio:.4f} | ratio={avg_ratio:.2e}")

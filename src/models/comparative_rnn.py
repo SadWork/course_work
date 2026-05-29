@@ -53,7 +53,7 @@ class ComparativeRNNLayer(nn.Module):
         elif self.model_type == 'random_uniform':
             scale_val = min(1.0 / np.sqrt(self.seq_len), 1.0 / np.sqrt(self.num_layers))
         elif self.model_type == 'random_balanced':
-            scale_val = 0.1
+            scale_val = 0.88281
         else:
             scale_val = 1.0
             

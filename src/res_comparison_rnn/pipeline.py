@@ -121,15 +121,12 @@ def analyze_gradient_flow_rnn(state, grads):
         layer_stats.append(stats)
     return layer_stats
 
-
-
 def compute_state_gradients(state, batch_x, batch_y, is_regression, num_layers, seq_len, hidden_size):
     """
     Вычисляет среднюю норму градиента по скрытому состоянию h_t^l 
     на каждом слое l и шаге времени t.
     """
     batch_size = batch_x.shape[0]
-    # Создаем тензор нулевых возмущений, по которому будем брать градиент
     init_perturbations = jnp.zeros((num_layers, seq_len, batch_size, hidden_size))
 
     def loss_fn_with_perturbations(perturbations):
@@ -145,12 +142,106 @@ def compute_state_gradients(state, batch_x, batch_y, is_regression, num_layers, 
     grad_fn = jax.grad(loss_fn_with_perturbations)
     state_grads = grad_fn(init_perturbations)  # Форма: (L, T, B, H)
     
-    # Считаем L2 норму по скрытому размерности H, затем среднее по батчу B
     state_grad_norms = jnp.linalg.norm(state_grads, axis=-1)  # Форма: (L, T, B)
     mean_state_grad_norms = jnp.mean(state_grad_norms, axis=-1)  # Форма: (L, T)
     
     return mean_state_grad_norms
 
+# --- Функции автоматического подбора оптимального scale_val ---
+def compute_gradients_for_scale(scale_val, model_type, depth, hidden_size, seq_len, x_jax, y_jax, is_regression):
+    """Вычисляет профиль градиентов по состояниям для заданного масштаба весов."""
+    input_size = x_jax.shape[-1]
+    output_size = 1 if is_regression else 10
+    model = ComparativeStackedRNN(
+        input_size=input_size,
+        hidden_size=hidden_size,
+        num_layers=depth,
+        seq_len=seq_len,
+        output_size=output_size,
+        model_type=model_type,
+        custom_scale=scale_val,
+        seed=42
+    )
+    
+    rng = jax.random.PRNGKey(42)
+    params = model.init(rng, x_jax)['params']
+    
+    num_layers = depth
+    batch_size = x_jax.shape[0]
+    init_perturbations = jnp.zeros((num_layers, seq_len, batch_size, hidden_size))
+
+    def loss_fn(perturbations):
+        if is_regression:
+            preds = model.apply({'params': params}, x_jax, perturbations=perturbations)
+            loss = jnp.mean((preds.squeeze(-1) - y_jax.squeeze(-1)) ** 2)
+        else:
+            logits = model.apply({'params': params}, x_jax, perturbations=perturbations)
+            one_hot_y = jax.nn.one_hot(y_jax, 10)
+            loss = optax.softmax_cross_entropy(logits=logits, labels=one_hot_y).mean()
+        return loss
+
+    grad_fn = jax.grad(loss_fn)
+    state_grads = grad_fn(init_perturbations)
+    state_grad_norms = jnp.linalg.norm(state_grads, axis=-1)
+    mean_state_grad_norms = jnp.mean(state_grad_norms, axis=-1)
+    return mean_state_grad_norms
+
+def search_optimal_scale_in_pipeline(model_type, depth, hidden_size, seq_len, x_jax, y_jax, is_regression, target_log_ratio=3.0):
+    """
+    Выполняет поиск scale_val:
+    Цель: приблизить отношение градиентов dL/dh_0 / dL/dh_T к target_ratio.
+    """
+    scale_low = 0.01
+    scale_high = 2.0
+    grid_steps = 20
+    max_iters = 10
+    tol = 0.01
+
+
+    low_b = scale_low
+    high_b = scale_high
+
+    best_scale = (scale_low + scale_high) / 2.0
+    best_ratio_diff = float('inf')
+    
+    for i in range(max_iters):
+        mid = (low_b + high_b) / 2.0
+        try:
+            mean_grads = compute_gradients_for_scale(mid, model_type, depth, hidden_size, seq_len, x_jax, y_jax, is_regression)
+            g_start = mean_grads[0, 0]
+            g_end = mean_grads[0, -1]
+            avg_log_ratio = float(jnp.log(g_start + 1e-35) - jnp.log(g_end + 1e-35))
+            avg_ratio = np.exp(avg_log_ratio)
+
+            print(f"    Итерация {i+1:02d} | scale={mid:.5f} | log_ratio={avg_log_ratio:.4f} | ratio={avg_ratio:.2e}")
+            
+            if np.isnan(avg_log_ratio) or np.isinf(avg_log_ratio):
+                high_b = mid
+                continue
+            
+            safe_target = max(1e-5, target_log_ratio)
+            safe_current = max(1e-5, avg_log_ratio)
+
+            # Расстояние как отношение большей величины к меньшей
+            current_diff = max(safe_current / safe_target, safe_target / safe_current)
+            if current_diff < best_ratio_diff:
+                best_ratio_diff = current_diff
+                best_scale = mid
+                
+            # Если полученное отношение меньше целевого, увеличиваем веса.
+            # Если больше целевого — уменьшаем веса.
+            if avg_log_ratio < target_log_ratio:
+                low_b = mid
+            else:
+                high_b = mid
+                
+            if current_diff < tol:
+                break
+        except Exception:
+            high_b = mid
+            continue
+            
+    return float(best_scale)
 
 def run_rnn_pipeline(
     model_type: str,
@@ -175,22 +266,8 @@ def run_rnn_pipeline(
     
     input_size = 2 if is_regression else 1
     output_size = 1 if is_regression else 10
-    
-    model = ComparativeStackedRNN(
-        input_size=input_size,
-        hidden_size=hidden_size,
-        num_layers=depth,
-        seq_len=seq_len,
-        output_size=output_size,
-        model_type=model_type,
-        seed=seed
-    )
-    
-    rng = jax.random.PRNGKey(seed)
-    dummy_shape = (batch_size, seq_len, input_size)
-    state = create_train_state(model, rng, lr, dummy_shape)
-    
-    # 1. Сбор опорных данных для вычисления градиентов
+
+    # 1. Сбор опорных данных для вычисления градиентов и подбора масштаба
     if is_regression:
         ref_x, ref_y = get_adding_data(batch_size=batch_size, seq_len=seq_len)
         ref_x_jax = jnp.array(ref_x.numpy())
@@ -208,6 +285,35 @@ def run_rnn_pipeline(
         ref_x_jax = jnp.array(ref_batch_x.numpy())
         ref_y_jax = jnp.array(ref_batch_y.numpy())
         
+    # 2. Автоматический подбор масштаба (scale_val) для текущей архитектуры
+    print(f"  [Автоподбор scale_val] Запуск гибридного поиска оптимальной инициализации...")
+    opt_scale = search_optimal_scale_in_pipeline(
+        model_type=model_type,
+        depth=depth,
+        hidden_size=hidden_size,
+        seq_len=seq_len,
+        x_jax=ref_x_jax,
+        y_jax=ref_y_jax,
+        is_regression=is_regression
+    )
+    print(f"  [Автоподбор scale_val] Выбран оптимальный scale_val: {opt_scale:.5f}")
+
+    # Инициализация модели с подобранным оптимальным масштабом
+    model = ComparativeStackedRNN(
+        input_size=input_size,
+        hidden_size=hidden_size,
+        num_layers=depth,
+        seq_len=seq_len,
+        output_size=output_size,
+        model_type=model_type,
+        seed=seed,
+        custom_scale=opt_scale
+    )
+    
+    rng = jax.random.PRNGKey(seed)
+    dummy_shape = (batch_size, seq_len, input_size)
+    state = create_train_state(model, rng, lr, dummy_shape)
+    
     # Снимаем градиентный поток на инициализации
     init_grads = compute_rnn_gradients(state, ref_x_jax, ref_y_jax, is_regression)
     gradient_flow_init = analyze_gradient_flow_rnn(state, init_grads)
@@ -215,7 +321,6 @@ def run_rnn_pipeline(
         state, ref_x_jax, ref_y_jax, is_regression, 
         depth, seq_len, hidden_size
     )
-
     
     history = {
         "train_loss": [],
@@ -308,7 +413,8 @@ def run_rnn_pipeline(
             "seq_len": seq_len,
             "seed": seed,
             "elapsed_time": elapsed_time,
-            "is_regression": is_regression
+            "is_regression": is_regression,
+            "scale_val": opt_scale  # Запись выбранного масштаба
         },
         "history": history,
         "gradient_flow_init": gradient_flow_init,
@@ -319,7 +425,7 @@ def run_rnn_pipeline(
     }
     
     os.makedirs(save_dir, exist_ok=True)
-    filename = f"{dataset_name}_{model_type}_L{depth}_W{hidden_size}_seq{seq_len}_seed{seed}.pkl"
+    filename = f"{dataset_name}_{model_type}_L{depth}_W{hidden_size}_seq{seq_len}_scale{opt_scale:.4f}_seed{seed}.pkl"
     save_path = os.path.join(save_dir, filename)
     
     with open(save_path, "wb") as f:
