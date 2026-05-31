@@ -2,6 +2,8 @@
 
 import argparse
 import itertools
+import os
+import glob
 from src.datasets import get_mnist_loaders, get_fashion_mnist_loaders
 from src.res_comparison_rnn.pipeline import run_rnn_pipeline, set_global_seeds
 
@@ -52,6 +54,15 @@ def main():
         
         # Определяем физическую длину временного ряда
         seq_len = args.seq_len_adding if dataset_name == "adding" else 784
+        
+        # Шаблон имени файла: {dataset_name}_{model_type}_L{depth}_W{hidden_size}_seq{seq_len}_scale{opt_scale:.4f}_seed{seed}.pkl
+        pattern = f"{dataset_name}_{model_type}_L{depth}_W{hidden_size}_seq{seq_len}_scale*_seed{args.seed}.pkl"
+        full_pattern = os.path.join(args.save_dir, pattern)
+        
+        # Если файл уже существует, пропускаем запуск
+        if glob.glob(full_pattern):
+            print(f"Пропуск: RNN эксперимент {model_type} L{depth} W{hidden_size} T{seq_len} на {dataset_name} уже выполнен.")
+            continue
         
         # Загрузка классификационных сетов (Adding генерируется динамически)
         train_loader, test_loader = None, None

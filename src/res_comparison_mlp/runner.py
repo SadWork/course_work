@@ -2,6 +2,8 @@
 
 import argparse
 import itertools
+import os
+import glob
 from src.datasets import get_mnist_loaders, get_fashion_mnist_loaders
 from src.res_comparison_mlp.pipeline import run_training_pipeline, set_global_seeds
 
@@ -48,6 +50,15 @@ def main():
 
     for idx, (dataset_name, model_type, depth, hidden_size) in enumerate(experiments):
         print(f"\n[Эксперимент {idx + 1}/{len(experiments)}]")
+        
+        # Шаблон имени файла: {dataset_name}_{model_type}_L{depth}_W{hidden_size}_scale{opt_scale:.4f}_seed{seed}.pkl
+        pattern = f"{dataset_name}_{model_type}_L{depth}_W{hidden_size}_scale*_seed{args.seed}.pkl"
+        full_pattern = os.path.join(args.save_dir, pattern)
+        
+        # Если файл, соответствующий шаблону, уже существует, пропускаем эксперимент
+        if glob.glob(full_pattern):
+            print(f"Пропуск: Эксперимент {model_type} L{depth} W{hidden_size} на {dataset_name} уже выполнен.")
+            continue
         
         if dataset_name not in loaders_cache:
             print(f"Загрузка датасета: {dataset_name.upper()}...")
